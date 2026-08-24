@@ -139,3 +139,102 @@ enum GLMUsageParser {
         )
     }
 }
+
+// MARK: - Provider 协议与网络实现
+
+/// 一家提供商的用量查询实现。新增提供商 = 新增一个遵守本协议的类型
+protocol UsageProviding: Sendable {
+    var id: UsageProviderID { get }
+    func fetchUsage(key: String) async throws -> ProviderUsageSummary
+}
+
+/// 请求/响应的公共处理：401 → 带提示的 unauthorized，其他非 200 → http，
+/// URLError → network。body 交给调用方各自的 parser。
+private func checkedData(from data: Data, response: URLResponse, unauthorizedHint: String) throws -> Data {
+    guard let http = response as? HTTPURLResponse else {
+        throw UsageFetchError.network
+    }
+    switch http.statusCode {
+    case 200:
+        return data
+    case 401:
+        throw UsageFetchError.unauthorized(unauthorizedHint)
+    default:
+        throw UsageFetchError.http(http.statusCode)
+    }
+}
+
+/// 将底层网络异常归一化为 UsageFetchError
+private func mapNetworkError(_ error: Error) -> UsageFetchError {
+    if let usageError = error as? UsageFetchError { return usageError }
+    return .network
+}
+
+/// Kimi Code 平台（Coding Plan 会员）用量查询。
+/// 端点与认证头以开源项目 kimi-code-usage 实测为准：
+///   GET https://api.kimi.com/coding/v1/usages（404 时回退 /usage）
+///   Authorization: Bearer {key}，User-Agent: KimiCLI/1.6（服务端按 UA 区分客户端）
+struct KimiUsageProvider: UsageProviding {
+    let id = UsageProviderID.kimi
+
+    private static let base = URL(string: "https://api.kimi.com/coding/v1")!
+
+    func fetchUsage(key: String) async throws -> ProviderUsageSummary {
+        do {
+            var data = try await get(path: "usages", key: key)
+            return try KimiUsageParser.parse(data)
+        } catch UsageFetchError.http(404) {
+            // 旧端点回退
+            let data = try await get(path: "usage", key: key)
+            return try KimiUsageParser.parse(data)
+        }
+    }
+
+    private func get(path: String, key: String) async throws -> Data {
+        var request = URLRequest(url: Self.base.appendingPathComponent(path))
+        request.timeoutInterval = 10
+        request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+        request.setValue("KimiCLI/1.6", forHTTPHeaderField: "User-Agent")
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            return try checkedData(from: data, response: response, unauthorizedHint: """
+                认证失败：请确认使用 Kimi Code 控制台的 sk-kimi- 开头 Key，\
+                而非开放平台（platform.kimi.com）的 Key
+                """)
+        } catch {
+            throw mapNetworkError(error)
+        }
+    }
+}
+
+/// 智谱 GLM Coding Plan 用量查询。
+/// 端点与认证头以官方插件仓库 zai-coding-plugins 的 query-usage.mjs 为准：
+///   GET {domain}/api/monitor/usage/quota/limit
+///   Authorization: {key}（注意：不带 Bearer 前缀）
+struct GLMUsageProvider: UsageProviding {
+    let id = UsageProviderID.glm
+
+    private var domain: URL {
+        if UserDefaults.standard.bool(forKey: UsageSettings.glmInternationalKey) {
+            URL(string: "https://api.z.ai")!
+        } else {
+            URL(string: "https://open.bigmodel.cn")!
+        }
+    }
+
+    func fetchUsage(key: String) async throws -> ProviderUsageSummary {
+        var request = URLRequest(url: domain.appendingPathComponent("api/monitor/usage/quota/limit"))
+        request.timeoutInterval = 10
+        request.setValue(key, forHTTPHeaderField: "Authorization")
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            let checked = try checkedData(
+                from: data, response: response,
+                unauthorizedHint: "认证失败：请确认使用 GLM Coding Plan 的 API Key"
+            )
+            return try GLMUsageParser.parse(checked)
+        } catch {
+            throw mapNetworkError(error)
+        }
+    }
+}
