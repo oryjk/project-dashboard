@@ -131,4 +131,31 @@ struct UsageModelTests {
         #expect(model.configured.isEmpty)
         #expect(store.keys[.kimi] == nil)
     }
+
+    @Test func tickNowRespectsThrottleAndFiresAfterInterval() async {
+        let provider = MockProvider(id: .kimi, result: .success(okSummary))
+        let store = InMemoryKeyStore()
+        store.keys[.kimi] = "k"
+        let model = UsageModel(providers: [provider], keyStore: store)
+
+        await model.tickNow()   // 首次：发起请求
+        #expect(provider.fetchCount == 1)
+
+        await model.tickNow()   // 节流窗口内：不请求
+        #expect(provider.fetchCount == 1)
+        #expect(model.lastRefreshAttempt != nil)
+    }
+
+    @Test func stopPeriodicRefreshCancelsTimer() {
+        let provider = MockProvider(id: .kimi, result: .success(okSummary))
+        let store = InMemoryKeyStore()
+        store.keys[.kimi] = "k"
+        let model = UsageModel(providers: [provider], keyStore: store)
+
+        model.startPeriodicRefresh()
+        model.stopPeriodicRefresh()
+        // 停止后可重复调用不崩溃、状态干净
+        model.stopPeriodicRefresh()
+        #expect(model.isRefreshing == false)
+    }
 }

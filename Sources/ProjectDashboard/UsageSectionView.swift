@@ -42,9 +42,28 @@ struct UsageSectionView: View {
                     onConfigure: { showSettings = true }
                 )
             }
+            // 刷新状态行：上次更新时间 + 距下次自动刷新的倒计时（每秒驱动重算）
+            if !usage.configured.isEmpty, let last = usage.lastRefreshAttempt {
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    let remaining = max(0, UsageModel.throttleInterval - context.date.timeIntervalSince(last))
+                    HStack(spacing: 4) {
+                        Text("更新于 \(last, format: .dateTime.hour().minute().second())")
+                        Text(remaining <= 0 ? "· 即将刷新…" : "· \(formatCountdown(remaining)) 后自动刷新")
+                    }
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
+    }
+
+    /// 秒数格式化为 m:ss（节流窗口最大 300 秒）
+    private func formatCountdown(_ seconds: TimeInterval) -> String {
+        let s = Int(seconds.rounded(.up))
+        return "\(s / 60):\(String(format: "%02d", s % 60))"
     }
 }
 

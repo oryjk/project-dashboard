@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import SwiftUI
 
@@ -21,7 +22,10 @@ final class UsageModel: ObservableObject {
     let providers: [any UsageProviding]
 
     private let keyStore: any UsageKeyStore
-    private var lastRefreshAttempt: Date?
+    /// 上次刷新尝试时间（供 UI 计算自动刷新倒计时）
+    @Published private(set) var lastRefreshAttempt: Date?
+    /// 周期刷新定时器订阅（随面板开关启停）
+    private var refreshCancellable: AnyCancellable?
 
     init(
         providers: [any UsageProviding] = [KimiUsageProvider(), GLMUsageProvider()],
@@ -95,6 +99,29 @@ final class UsageModel: ObservableObject {
                 }
             }
         }
+    }
+
+    /// 面板打开期间启动周期刷新：每 10 秒 tick 一次，节流检查在 tick 内完成
+    /// （实际发请求的频率仍是 throttleInterval = 300 秒一次）
+    func startPeriodicRefresh() {
+        stopPeriodicRefresh()
+        refreshCancellable = Timer.publish(every: 10, on: .main, in: .common)
+            .autoconnect()
+            .sink { [weak self] _ in
+                guard let self else { return }
+                Task { await self.refreshIfNeeded() }
+            }
+    }
+
+    /// 面板关闭时停止，避免后台空转
+    func stopPeriodicRefresh() {
+        refreshCancellable?.cancel()
+        refreshCancellable = nil
+    }
+
+    /// 定时器回调的可测入口（供单元测试直接调用，绕过真实 Timer）
+    func tickNow() async {
+        await refreshIfNeeded()
     }
 
     /// 保存 key 并立即刷新（设置弹层调用）

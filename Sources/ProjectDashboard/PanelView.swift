@@ -21,7 +21,11 @@ struct PanelView: View {
         .onAppear {
             model.startAutoRefresh()
             model.refresh()
+            usageModel.startPeriodicRefresh()
             Task { await usageModel.refreshIfNeeded() }
+        }
+        .onDisappear {
+            usageModel.stopPeriodicRefresh()
         }
     }
 
