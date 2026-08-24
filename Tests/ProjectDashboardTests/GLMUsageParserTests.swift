@@ -12,8 +12,9 @@ struct GLMUsageParserTests {
         ]}}
         """
         let summary = try GLMUsageParser.parse(Data(json.utf8))
-        #expect(abs(summary.usedPercent - 55.5) < 0.001)
-        #expect(summary.resetAt == nil)
+        #expect(abs(summary.windows[0].usedPercent - 55.5) < 0.001)
+        #expect(summary.windows[0].label == "5 小时")
+        #expect(summary.windows[0].resetAt == nil)
     }
 
     // 裸结构：limits 在根层级（与 glm-plan-usage 插件的 json.data || json 兼容逻辑一致）
@@ -22,7 +23,7 @@ struct GLMUsageParserTests {
         {"limits":[{"type":"TOKENS_LIMIT","percentage":30}]}
         """
         let summary = try GLMUsageParser.parse(Data(json.utf8))
-        #expect(abs(summary.usedPercent - 30.0) < 0.001)
+        #expect(abs(summary.windows[0].usedPercent - 30.0) < 0.001)
     }
 
     // 超出范围的百分比被钳制到 0...100
@@ -31,7 +32,7 @@ struct GLMUsageParserTests {
         {"limits":[{"type":"TOKENS_LIMIT","percentage":130}]}
         """
         let summary = try GLMUsageParser.parse(Data(json.utf8))
-        #expect(abs(summary.usedPercent - 100.0) < 0.001)
+        #expect(abs(summary.windows[0].usedPercent - 100.0) < 0.001)
     }
 
     // 没有 TOKENS_LIMIT 类型 → 解析失败

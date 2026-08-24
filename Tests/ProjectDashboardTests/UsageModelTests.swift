@@ -38,7 +38,9 @@ final class InMemoryKeyStore: UsageKeyStore, @unchecked Sendable {
 
 @MainActor
 struct UsageModelTests {
-    private let okSummary = ProviderUsageSummary(usedPercent: 42, resetAt: nil)
+    private let okSummary = ProviderUsageSummary(windows: [
+        UsageWindow(label: "5 小时", usedPercent: 42, resetAt: nil)
+    ])
 
     @Test func refreshLoadsConfiguredProvider() async {
         let provider = MockProvider(id: .kimi, result: .success(okSummary))

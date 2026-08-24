@@ -48,7 +48,7 @@ struct UsageSectionView: View {
     }
 }
 
-/// 单个提供商行：按状态展示 配置入口 / 加载中 / 失败 / 进度条
+/// 单个提供商行：按状态展示 配置入口 / 加载中 / 失败 / 各限额窗口进度条
 private struct UsageProviderRow: View {
     let state: UsageState
     let name: String
@@ -83,16 +83,26 @@ private struct UsageProviderRow: View {
             }
             .help(message)
         case .loaded(let summary):
-            HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(name)
-                UsageBar(percent: summary.usedPercent)
-                Text("\(Int(summary.usedPercent.rounded()))%")
-                    .monospacedDigit()
-                    .frame(width: 34, alignment: .trailing)
-                Text(resetText(summary.resetAt))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .frame(width: 96, alignment: .trailing)
+                // 每个限额窗口一行：窗口名 + 进度条 + 百分比 + 倒计时
+                ForEach(summary.windows.indices, id: \.self) { index in
+                    let window = summary.windows[index]
+                    HStack(spacing: 8) {
+                        Text(window.label)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .frame(width: 44, alignment: .leading)
+                        UsageBar(percent: window.usedPercent)
+                        Text("\(Int(window.usedPercent.rounded()))%")
+                            .monospacedDigit()
+                            .frame(width: 34, alignment: .trailing)
+                        Text(resetText(window.resetAt))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .frame(width: 96, alignment: .trailing)
+                    }
+                }
             }
         }
     }

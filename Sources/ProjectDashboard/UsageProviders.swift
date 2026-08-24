@@ -15,12 +15,19 @@ enum UsageProviderID: String, CaseIterable, Hashable, Sendable {
     }
 }
 
-/// 归一化后的用量摘要：已用百分比 + 窗口重置时间
-struct ProviderUsageSummary: Equatable, Sendable {
+/// 单个限额窗口的用量
+struct UsageWindow: Equatable, Sendable {
+    /// 展示名："5 小时"、"周"
+    let label: String
     /// 当前窗口已用百分比，0...100
     let usedPercent: Double
-    /// 窗口重置时间；GLM 接口不提供则为 nil
+    /// 窗口重置时间；接口不提供则为 nil
     let resetAt: Date?
+}
+
+/// 归一化后的用量摘要：按展示顺序排列的窗口列表（5h 在前，周在后）
+struct ProviderUsageSummary: Equatable, Sendable {
+    let windows: [UsageWindow]
 }
 
 /// 单个提供商的展示状态
@@ -60,8 +67,10 @@ enum UsageSettings {
 
 /// 解析 Kimi Code 平台用量响应。
 /// 兼容两种结构（字段名以 kimi-cli 与 kimi-code-usage 项目实测为准）：
-///   新 /usages：{"data": [{"model_name": "all", "used":…, "limit":…, "resetTime":…}, …]}
-///   旧 /usage：{"usage": {…}, "limits": […]}
+///   新 /usages：{"data": [{"model_name": "all", …}, {"model_name": "kimi-k2", "name": "…", …}]}
+///     "all" 行为周用量汇总，其余行为限额窗口（5 小时等）
+///   旧 /usage：{"usage": {…}, "limits": […]}，usage 为周用量，limits 为各限额窗口
+/// 窗口顺序：限额窗口在前（按 API 返回顺序），周窗口最后。
 enum KimiUsageParser {
     static func parse(_ data: Data) throws -> ProviderUsageSummary {
         guard let obj = try? JSONSerialization.jsonObject(with: data),
@@ -69,23 +78,86 @@ enum KimiUsageParser {
             throw UsageFetchError.parsing
         }
 
-        // 汇总行：新结构取 data 数组中 model_name == "all"；旧结构取 usage 对象
-        var fields: [String: Any]?
         if let list = payload["data"] as? [[String: Any]] {
-            fields = list.first { ($0["model_name"] as? String) == "all" }
-        } else if let usage = payload["usage"] as? [String: Any] {
-            fields = usage
+            return try parseNewShape(list)
         }
-        guard let fields else { throw UsageFetchError.parsing }
+        if let usage = payload["usage"] as? [String: Any] {
+            return try parseOldShape(
+                usage: usage,
+                limits: payload["limits"] as? [[String: Any]] ?? []
+            )
+        }
+        throw UsageFetchError.parsing
+    }
 
+    /// 新结构：data 数组。"all" 行缺失 → 解析失败；limit 无效 → 整体失败
+    private static func parseNewShape(_ list: [[String: Any]]) throws -> ProviderUsageSummary {
+        guard let summaryFields = list.first(where: { ($0["model_name"] as? String) == "all" }) else {
+            throw UsageFetchError.parsing
+        }
+        let weekly = try weeklyWindow(from: summaryFields)
+
+        var windows: [UsageWindow] = []
+        for fields in list where (fields["model_name"] as? String) != "all" {
+            // 限额窗口 limit 缺失或 <= 0 → 跳过该窗口（不报错）
+            guard let limit = intValue(fields, keys: ["limit", "limit_amount"]), limit > 0 else { continue }
+            // label 取行内 name/title 原文（含数字小时语义不翻译）；皆无时用兜底名
+            let label = (fields["name"] as? String) ?? (fields["title"] as? String) ?? "限额窗口"
+            windows.append(usageWindow(label: label, limit: limit, fields: fields))
+        }
+        windows.append(weekly)
+        return ProviderUsageSummary(windows: windows)
+    }
+
+    /// 旧结构：usage 对象为周用量，limits 各项的 detail 为限额窗口数值
+    private static func parseOldShape(usage: [String: Any], limits: [[String: Any]]) throws -> ProviderUsageSummary {
+        let weekly = try weeklyWindow(from: usage)
+
+        var windows: [UsageWindow] = []
+        for item in limits {
+            guard let detail = item["detail"] as? [String: Any] else { continue }
+            // 数值解析规则与新结构限额窗口相同：limit 缺失或 <= 0 → 跳过
+            guard let limit = intValue(detail, keys: ["limit", "limit_amount"]), limit > 0 else { continue }
+            windows.append(usageWindow(
+                label: windowLabel(item["window"] as? [String: Any]),
+                limit: limit,
+                fields: detail
+            ))
+        }
+        windows.append(weekly)
+        return ProviderUsageSummary(windows: windows)
+    }
+
+    /// 周窗口："all" 行或旧结构 usage 对象；limit 缺失或无效 → 整体失败
+    private static func weeklyWindow(from fields: [String: Any]) throws -> UsageWindow {
         let limit = intValue(fields, keys: ["limit", "limit_amount"])
         guard let limit, limit > 0 else { throw UsageFetchError.missingLimit }
+        return usageWindow(label: "周", limit: limit, fields: fields)
+    }
 
+    /// 由 limit 与 used（含 remaining 变体）构造单个窗口，百分比钳制到 0...100
+    private static func usageWindow(label: String, limit: Int, fields: [String: Any]) -> UsageWindow {
         let used = intValue(fields, keys: ["used", "used_amount"])
             ?? intValue(fields, keys: ["remaining"]).map { limit - $0 }
-
         let percent = min(max(Double(used ?? 0) / Double(limit) * 100, 0), 100)
-        return ProviderUsageSummary(usedPercent: percent, resetAt: resetDate(fields))
+        return UsageWindow(label: label, usedPercent: percent, resetAt: resetDate(fields))
+    }
+
+    /// 旧结构 limits 的窗口 label：由 window.duration + timeUnit 生成中文展示名。
+    /// 映射：MINUTE(S) 且可整除 60 → "N 小时"；HOUR(S) → "N 小时"；DAY(S) → "N 天"；其余 → "限额窗口"
+    private static func windowLabel(_ window: [String: Any]?) -> String {
+        guard let window,
+              let duration = (window["duration"] as? NSNumber)?.intValue else { return "限额窗口" }
+        switch (window["timeUnit"] as? String ?? "").uppercased() {
+        case "HOUR", "HOURS":
+            return "\(duration) 小时"
+        case "DAY", "DAYS":
+            return "\(duration) 天"
+        case "MINUTE", "MINUTES":
+            return duration > 0 && duration % 60 == 0 ? "\(duration / 60) 小时" : "限额窗口"
+        default:
+            return "限额窗口"
+        }
     }
 
     /// 多字段名容错取整数值
@@ -132,11 +204,10 @@ enum GLMUsageParser {
               let percent = tokenLimit["percentage"] as? NSNumber else {
             throw UsageFetchError.parsing
         }
-        // 该端点不返回窗口重置时间
-        return ProviderUsageSummary(
-            usedPercent: min(max(percent.doubleValue, 0), 100),
-            resetAt: nil
-        )
+        // 该端点不返回窗口重置时间；GLM 仅一个 5 小时窗口，单窗口包装
+        return ProviderUsageSummary(windows: [
+            UsageWindow(label: "5 小时", usedPercent: min(max(percent.doubleValue, 0), 100), resetAt: nil)
+        ])
     }
 }
 
