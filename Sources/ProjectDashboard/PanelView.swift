@@ -5,19 +5,23 @@ struct PanelView: View {
     @EnvironmentObject private var model: DashboardModel
     @Environment(\.openWindow) private var openWindow
     @State private var showDirectories = false
+    @EnvironmentObject private var usageModel: UsageModel
 
     var body: some View {
         VStack(spacing: 0) {
             header
             Divider()
+            UsageSectionView()
+            Divider()
             RepoListView(repos: model.repos, rootPath: model.rootPathsSummary)
             Divider()
             footer
         }
-        .frame(width: 400, height: 500)
+        .frame(width: 400, height: 560)
         .onAppear {
             model.startAutoRefresh()
             model.refresh()
+            Task { await usageModel.refreshIfNeeded() }
         }
     }
 
