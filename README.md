@@ -2,7 +2,17 @@
 
 个人自用的 macOS 菜单栏工具：一眼看清本地 git 项目的脏状态、一键清理 Rust 构建产物，并聚合查看 Kimi / GLM 两家 Coding Plan 的 token 用量——不用再逐个打开网页控制台。
 
-纯本地应用（App Sandbox 沙盒），零第三方依赖，Swift 6 + SwiftUI，仅支持 macOS 14+（arm64）。
+纯本地应用（App Sandbox 沙盒），零第三方依赖，Swift 6 + SwiftUI，需要 macOS 14+（以 Apple Silicon 为主，Intel 未测试）。
+
+## 截图
+
+**菜单栏面板**：顶部 Token 用量区块（Kimi 双窗口 + GLM，带重置倒计时与自动刷新），下方为置顶仓库列表。
+
+![菜单栏面板](Assets/screenshots/panel.png)
+
+**主窗口**：搜索过滤 + 置顶/项目分区，每个仓库显示分支、最近提交时间、未提交数、可清理空间等徽章。
+
+![主窗口](Assets/screenshots/main-window.png)
 
 ## 功能
 
@@ -38,11 +48,34 @@
 - **Kimi**：在 [kimi.com/code/console](https://www.kimi.com/code/console) 创建，`sk-kimi-` 开头。注意必须用 Kimi Code 平台的 key，**不是**开放平台（platform.kimi.com）的 key
 - **GLM**：在智谱开放平台控制台创建的 Coding Plan API key
 
-## 构建与运行
+## 安装（从源码构建）
+
+本项目没有签名分发渠道，自行从源码构建：
 
 ```bash
-# 日常开发：编译 + 组装 .app + 开发证书签名 + 打入真实 git 二进制
-# 若 /Applications 下有已安装副本会自动同步更新
+git clone git@github.com:oryjk/project-dashboard.git
+cd project-dashboard
+./build-app.sh
+```
+
+构建成功后，仓库目录下会生成 `ProjectDashboard.app`，把它拖进 `/Applications`（或 `应用程序`）即完成安装；之后再跑 `./build-app.sh` 会自动同步更新已安装的副本。
+
+### 前置条件
+
+- macOS 14+
+- Xcode 16+（或其命令行工具，需带 Swift 6 工具链）：`xcode-select --install` 之后用 `swift --version` 确认是 6.x
+- 无需付费开发者账号（见下方签名说明）
+
+### 签名说明（重要）
+
+`build-app.sh` 会优先使用本机的 Apple Development 证书签名；没有任何证书时自动回退为 ad-hoc 签名，应用照常可运行。但 **ad-hoc 签名每次构建都会变化**，而沙盒授权的扫描目录和 Keychain 里保存的 API key 都与签名身份绑定——重新构建后这些配置会失效，需要重新选择目录、重新粘贴 key（不是 bug）。
+
+建议一次性配置免费证书来避免：任意 Apple ID 在 Xcode → Settings → Accounts → Manage Certificates 里创建一张 Apple Development 证书即可，构建脚本会自动使用它，之后重建不再丢配置。
+
+## 开发
+
+```bash
+# 编译 + 组装 .app + 签名 + 打入真实 git 二进制
 ./build-app.sh
 
 # 运行测试（28 个，Swift Testing）
@@ -86,3 +119,7 @@ docs/superpowers/               # 设计文档与实现计划
 ## 数据与隐私
 
 所有数据保存在本机：仓库分区偏好等存 UserDefaults，API key 存 Keychain，无任何遥测与云同步。网络请求仅发生在查询用量时（Kimi / 智谱的 API 域名）。
+
+## 开源协议
+
+[MIT](LICENSE)
