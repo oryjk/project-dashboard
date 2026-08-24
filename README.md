@@ -4,6 +4,8 @@
 
 纯本地应用（App Sandbox 沙盒），零第三方依赖，Swift 6 + SwiftUI，需要 macOS 14+（以 Apple Silicon 为主，Intel 未测试）。
 
+**直接下载**：[Releases 最新版](https://github.com/oryjk/project-dashboard/releases/latest)（`.dmg`，已通过 Apple 公证）。
+
 ## 截图
 
 **菜单栏面板**：顶部 Token 用量区块（Kimi 双窗口 + GLM，带重置倒计时与自动刷新），下方为置顶仓库列表。
@@ -48,9 +50,18 @@
 - **Kimi**：在 [kimi.com/code/console](https://www.kimi.com/code/console) 创建，`sk-kimi-` 开头。注意必须用 Kimi Code 平台的 key，**不是**开放平台（platform.kimi.com）的 key
 - **GLM**：在智谱开放平台控制台创建的 Coding Plan API key
 
-## 安装（从源码构建）
+## 安装
 
-本项目没有签名分发渠道，自行从源码构建：
+### 方式一：直接下载（推荐）
+
+从 [Releases](https://github.com/oryjk/project-dashboard/releases/latest) 下载最新的 `ProjectDashboard.dmg`，打开后把「项目面板」拖进 Applications 即可。安装包已通过 Apple 公证（Developer ID 签名），下载后可直接运行，不会被 Gatekeeper 拦截。
+
+- 系统要求：macOS 14+（Apple Silicon 为主，Intel 未测试）
+- 使用 Token 用量功能需配置 API key：点面板 ⚙︎，粘贴 Kimi（`sk-kimi-` 开头，在 [kimi.com/code/console](https://www.kimi.com/code/console) 创建，注意不是开放平台的 key）与 GLM 的 key
+
+### 方式二：从源码构建
+
+也可以自行从源码构建（获取未发布的最新改动，或自行定制）：
 
 ```bash
 git clone git@github.com:oryjk/project-dashboard.git
@@ -60,13 +71,13 @@ cd project-dashboard
 
 构建成功后，仓库目录下会生成 `ProjectDashboard.app`，把它拖进 `/Applications`（或 `应用程序`）即完成安装；之后再跑 `./build-app.sh` 会自动同步更新已安装的副本。
 
-### 前置条件
+#### 前置条件
 
 - macOS 14+
 - Xcode 16+（或其命令行工具，需带 Swift 6 工具链）：`xcode-select --install` 之后用 `swift --version` 确认是 6.x
 - 无需付费开发者账号（见下方签名说明）
 
-### 签名说明（重要）
+#### 签名说明（重要）
 
 `build-app.sh` 会优先使用本机的 Apple Development 证书签名；没有任何证书时自动回退为 ad-hoc 签名，应用照常可运行。但 **ad-hoc 签名每次构建都会变化**，而沙盒授权的扫描目录和 Keychain 里保存的 API key 都与签名身份绑定——重新构建后这些配置会失效，需要重新选择目录、重新粘贴 key（不是 bug）。
 
