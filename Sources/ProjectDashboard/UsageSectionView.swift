@@ -116,20 +116,24 @@ private struct UsageProviderRow: View {
                         Text("\(Int(window.usedPercent.rounded()))%")
                             .monospacedDigit()
                             .frame(width: 34, alignment: .trailing)
-                        Text(resetText(window.resetAt))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .frame(width: 96, alignment: .trailing)
+                        // 倒计时每秒跳动：仅该 Text 被时间线驱动局部重绘，不触发整行刷新
+                        TimelineView(.periodic(from: .now, by: 1)) { context in
+                            Text(resetText(window.resetAt, now: context.date))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .frame(width: 96, alignment: .trailing)
+                        }
                     }
                 }
             }
         }
     }
 
-    /// 窗口重置倒计时文案；无重置时间或已过期则降级显示
-    private func resetText(_ date: Date?) -> String {
+    /// 窗口重置倒计时文案；无重置时间或已过期则降级显示。
+    /// now 由 TimelineView 每秒传入（而非取 timeIntervalSinceNow），驱动倒计时跳动
+    private func resetText(_ date: Date?, now: Date) -> String {
         guard let date else { return "—" }
-        let diff = date.timeIntervalSinceNow
+        let diff = date.timeIntervalSince(now)
         if diff <= 0 { return "重置中" }
         let hours = Int(diff) / 3600
         let minutes = Int(diff) % 3600 / 60

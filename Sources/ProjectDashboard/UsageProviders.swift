@@ -169,7 +169,9 @@ enum KimiUsageParser {
         return nil
     }
 
-    /// resetTime 兼容秒级时间戳与 ISO8601 字符串两种格式
+    /// resetTime 兼容秒级时间戳与 ISO8601 字符串两种格式；
+    /// 绝对字段都不命中时回退 reset_in（距重置的相对秒数 → now + seconds），
+    /// 优先级与参考实现 kimi-code-usage 一致：绝对字段优先，reset_in 仅作回退
     private static func resetDate(_ fields: [String: Any]) -> Date? {
         for key in ["resetTime", "reset_at", "reset_time"] {
             guard let value = fields[key] else { continue }
@@ -180,6 +182,10 @@ enum KimiUsageParser {
                let d = ISO8601DateFormatter().date(from: s) {
                 return d
             }
+        }
+        // 回退：相对秒数 reset_in（> 0 才有效），锚定解析时刻
+        if let resetIn = intValue(fields, keys: ["reset_in"]), resetIn > 0 {
+            return Date(timeIntervalSinceNow: TimeInterval(resetIn))
         }
         return nil
     }

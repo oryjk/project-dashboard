@@ -113,4 +113,28 @@ struct KimiUsageParserTests {
             try KimiUsageParser.parse(Data("not json".utf8))
         }
     }
+
+    // reset_in（距重置的相对秒数）回退：绝对字段缺失时生效
+    @Test func parseResetInFallback() throws {
+        let json = """
+        {"data":[
+          {"model_name":"all","used":80,"limit":100,"reset_in":17600}
+        ]}
+        """
+        let summary = try KimiUsageParser.parse(Data(json.utf8))
+        let resetAt = try #require(summary.windows.last?.resetAt)
+        let delta = resetAt.timeIntervalSinceNow
+        #expect(delta > 17595 && delta < 17605)   // ≈ now + 17600s，留 5s 容差
+    }
+
+    // 绝对字段优先于 reset_in
+    @Test func absoluteResetTimeWinsOverResetIn() throws {
+        let json = """
+        {"data":[
+          {"model_name":"all","used":80,"limit":100,"resetTime":1755900000,"reset_in":999999}
+        ]}
+        """
+        let summary = try KimiUsageParser.parse(Data(json.utf8))
+        #expect(abs((summary.windows.last?.resetAt ?? .distantPast).timeIntervalSince1970 - 1755900000) < 1)
+    }
 }
