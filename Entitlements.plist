@@ -5,6 +5,9 @@
     <!-- App Store 强制：沙盒 -->
     <key>com.apple.security.app-sandbox</key>
     <true/>
+    <!-- 用量查询需要出站网络访问 -->
+    <key>com.apple.security.network.client</key>
+    <true/>
     <!-- 用户通过 NSOpenPanel 授权的目录可读写（扫描 git 仓库、清理 target） -->
     <key>com.apple.security.files.user-selected.read-write</key>
     <true/>
