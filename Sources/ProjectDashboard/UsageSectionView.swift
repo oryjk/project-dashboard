@@ -38,7 +38,8 @@ struct UsageSectionView: View {
             ForEach(usage.providers, id: \.id) { provider in
                 UsageProviderRow(
                     state: usage.states[provider.id] ?? .unconfigured,
-                    name: provider.id.displayName
+                    name: provider.id.displayName,
+                    onConfigure: { showSettings = true }
                 )
             }
         }
@@ -51,6 +52,8 @@ struct UsageSectionView: View {
 private struct UsageProviderRow: View {
     let state: UsageState
     let name: String
+    /// 未配置行点击「配置 API Key」后打开 key 设置弹层
+    let onConfigure: () -> Void
 
     var body: some View {
         switch state {
@@ -58,9 +61,9 @@ private struct UsageProviderRow: View {
             HStack {
                 Text(name).foregroundStyle(.secondary)
                 Spacer()
-                Text("未配置")
+                Button("配置 API Key", action: onConfigure)
+                    .buttonStyle(.borderless)
                     .font(.caption)
-                    .foregroundStyle(.tertiary)
             }
         case .loading:
             HStack {

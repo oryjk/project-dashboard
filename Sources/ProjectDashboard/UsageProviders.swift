@@ -181,7 +181,7 @@ struct KimiUsageProvider: UsageProviding {
 
     func fetchUsage(key: String) async throws -> ProviderUsageSummary {
         do {
-            var data = try await get(path: "usages", key: key)
+            let data = try await get(path: "usages", key: key)
             return try KimiUsageParser.parse(data)
         } catch UsageFetchError.http(404) {
             // 旧端点回退

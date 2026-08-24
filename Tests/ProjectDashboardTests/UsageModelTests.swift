@@ -27,7 +27,9 @@ final class MockProvider: UsageProviding, @unchecked Sendable {
 
 final class InMemoryKeyStore: UsageKeyStore, @unchecked Sendable {
     var keys: [UsageProviderID: String] = [:]
-    func readKey(for id: UsageProviderID) -> String? { keys[id] }
+    /// 模拟 Keychain 静默故障：saveKey 照常落内存，但 readKey 始终读不回
+    var readAlwaysFails = false
+    func readKey(for id: UsageProviderID) -> String? { readAlwaysFails ? nil : keys[id] }
     func saveKey(_ key: String, for id: UsageProviderID) { keys[id] = key }
     func deleteKey(for id: UsageProviderID) { keys[id] = nil }
 }
@@ -95,6 +97,23 @@ struct UsageModelTests {
         // 强制刷新不受节流限制
         await model.refreshNow()
         #expect(provider.fetchCount == 2)
+    }
+
+    @Test func keyReadFailureMarksProviderFailedInsteadOfLoading() async {
+        let provider = MockProvider(id: .kimi, result: .success(okSummary))
+        let store = InMemoryKeyStore()
+        store.keys[.kimi] = "sk-kimi-test"
+        let model = UsageModel(providers: [provider], keyStore: store)
+        #expect(model.configured == [.kimi])
+
+        // 模拟 saveKey 后 Keychain 读取静默失败：configured 已置位但 readKey 返回 nil
+        store.readAlwaysFails = true
+        await model.refreshNow()
+
+        // 不应停留在 loading，而应落可恢复的 failed 态，且不发起请求
+        #expect(model.states[.kimi] == .failed("Key 读取失败，请在设置中重新保存"))
+        #expect(provider.fetchCount == 0)
+        #expect(model.isRefreshing == false)
     }
 
     @Test func saveAndDeleteKeyUpdateConfiguredState() async {

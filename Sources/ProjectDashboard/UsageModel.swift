@@ -54,12 +54,17 @@ final class UsageModel: ObservableObject {
     func refreshNow() async {
         lastRefreshAttempt = Date()
 
-        // 先取好 key 再进并发组，避免在非隔离上下文触碰 MainActor 状态
-        let configuredProviders: [(provider: any UsageProviding, key: String)] = providers
-            .filter { configured.contains($0.id) }
-            .compactMap { provider in
-                keyStore.readKey(for: provider.id).map { (provider, $0) }
+        // 先取好 key 再进并发组，避免在非隔离上下文触碰 MainActor 状态。
+        // configured 已包含但 key 读不回（如 Keychain 写入静默失败）的提供商，
+        // 直接落失败态并给出可恢复指引，避免行永久停留在 loading 且 ⟳ 无法自救
+        var configuredProviders: [(provider: any UsageProviding, key: String)] = []
+        for provider in providers where configured.contains(provider.id) {
+            if let key = keyStore.readKey(for: provider.id) {
+                configuredProviders.append((provider, key))
+            } else {
+                states[provider.id] = .failed("Key 读取失败，请在设置中重新保存")
             }
+        }
         guard !configuredProviders.isEmpty else { return }
 
         isRefreshing = true
