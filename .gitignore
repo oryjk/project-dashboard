@@ -1,0 +1,5 @@
+.build/
+ProjectDashboard.app/
+*.dmg
+*.zip
+.DS_Store
