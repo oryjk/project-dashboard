@@ -150,24 +150,32 @@ private struct UsageSettingsView: View {
     @State private var glmKey = ""
     @AppStorage(UsageSettings.glmInternationalKey) private var glmInternational = false
 
+    /// 单列分区布局：所有元素共享同一左边缘（弹层宽度由调用处 .frame(width: 320) 统一约束）
     var body: some View {
-        Form {
-            LabeledContent("Kimi") {
-                VStack(alignment: .leading, spacing: 4) {
-                    SecureField(statusText(.kimi), text: $kimiKey)
-                    footer(for: .kimi)
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("Kimi").font(.headline)
+                    Spacer()
+                    headerStatus(for: .kimi)
                 }
+                SecureField(statusText(.kimi), text: $kimiKey)
             }
-            LabeledContent("GLM") {
-                VStack(alignment: .leading, spacing: 4) {
-                    SecureField(statusText(.glm), text: $glmKey)
-                    Picker("接口域名", selection: $glmInternational) {
-                        Text("国内版").tag(false)
-                        Text("国际版").tag(true)
-                    }
-                    .pickerStyle(.segmented)
-                    footer(for: .glm)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("GLM").font(.headline)
+                    Spacer()
+                    headerStatus(for: .glm)
                 }
+                SecureField(statusText(.glm), text: $glmKey)
+                Text("接口域名")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Picker("接口域名", selection: $glmInternational) {
+                    Text("国内版").tag(false)
+                    Text("国际版").tag(true)
+                }
+                .pickerStyle(.segmented)
             }
             HStack {
                 Spacer()
@@ -180,8 +188,7 @@ private struct UsageSettingsView: View {
                 .buttonStyle(.borderedProminent)
             }
         }
-        .formStyle(.grouped)
-        .padding(.vertical, 8)
+        .padding(12)
     }
 
     /// SecureField 占位符提示已配置状态与 key 前缀
@@ -190,20 +197,22 @@ private struct UsageSettingsView: View {
         return usage.configured.contains(id) ? "已配置，粘贴新值可替换（\(hint)）" : "粘贴 \(hint)"
     }
 
+    /// 分区头部右侧状态：已配置显示绿勾 + 清除按钮，未配置显示灰字
     @ViewBuilder
-    private func footer(for id: UsageProviderID) -> some View {
+    private func headerStatus(for id: UsageProviderID) -> some View {
         if usage.configured.contains(id) {
-            HStack {
-                Label("已配置", systemImage: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
-                    .font(.caption)
-                Spacer()
-                Button("清除", role: .destructive) {
-                    usage.deleteKey(for: id)
-                }
-                .buttonStyle(.borderless)
+            Label("已配置", systemImage: "checkmark.circle.fill")
                 .font(.caption)
+                .foregroundStyle(.green)
+            Button("清除", role: .destructive) {
+                usage.deleteKey(for: id)
             }
+            .buttonStyle(.borderless)
+            .font(.caption)
+        } else {
+            Text("未配置")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
         }
     }
 }
