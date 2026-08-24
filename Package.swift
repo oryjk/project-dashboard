@@ -5,6 +5,7 @@ let package = Package(
     name: "ProjectDashboard",
     platforms: [.macOS(.v14)],
     targets: [
-        .executableTarget(name: "ProjectDashboard")
+        .executableTarget(name: "ProjectDashboard"),
+        .testTarget(name: "ProjectDashboardTests", dependencies: ["ProjectDashboard"])
     ]
 )
