@@ -170,24 +170,50 @@ enum KimiUsageParser {
     }
 
     /// resetTime 兼容秒级时间戳与 ISO8601 字符串两种格式；
-    /// 绝对字段都不命中时回退 reset_in（距重置的相对秒数 → now + seconds），
-    /// 优先级与参考实现 kimi-code-usage 一致：绝对字段优先，reset_in 仅作回退
+    /// 绝对字段顺序与官方 kimi-cli _reset_hint 一致（reset_at / resetAt /
+    /// reset_time / resetTime）；
+    /// 都不命中时回退相对秒数字段（reset_in / resetIn / ttl，另加 window——
+    /// 仅当值为数字且 > 0 时按秒数处理；limits 结构里 window 通常是
+    /// {duration, timeUnit} 对象，非数字自然跳过），锚定解析时刻 now + seconds
     private static func resetDate(_ fields: [String: Any]) -> Date? {
-        for key in ["resetTime", "reset_at", "reset_time"] {
+        for key in ["reset_at", "resetAt", "reset_time", "resetTime"] {
             guard let value = fields[key] else { continue }
             if let n = value as? NSNumber, n.doubleValue > 0 {
                 return Date(timeIntervalSince1970: n.doubleValue)
             }
             if let s = value as? String,
-               let d = ISO8601DateFormatter().date(from: s) {
+               let d = parseISO8601Flexible(s) {
                 return d
             }
         }
-        // 回退：相对秒数 reset_in（> 0 才有效），锚定解析时刻
-        if let resetIn = intValue(fields, keys: ["reset_in"]), resetIn > 0 {
+        // 回退：相对秒数字段（> 0 才有效），锚定解析时刻
+        if let resetIn = intValue(fields, keys: ["reset_in", "resetIn", "ttl"]), resetIn > 0 {
             return Date(timeIntervalSinceNow: TimeInterval(resetIn))
         }
+        if let window = fields["window"] as? NSNumber, window.doubleValue > 0 {
+            return Date(timeIntervalSinceNow: window.doubleValue)
+        }
         return nil
+    }
+
+    /// 宽容解析 ISO8601 字符串：真实接口时间戳带纳秒级小数
+    /// （官方示例 "2025-12-23T05:24:18.443553353Z"，官方代码同样先截断到微秒），
+    /// ISO8601DateFormatter 无法直接解析——先把小数截断到最多 6 位
+    /// （保留其后的 Z 或 +hh:mm 时区），再用 withFractionalSeconds 解析；
+    /// 无小数则按默认格式解析
+    private static func parseISO8601Flexible(_ value: String) -> Date? {
+        guard let dot = value.firstIndex(of: ".") else {
+            return ISO8601DateFormatter().date(from: value)
+        }
+        // 小数部分为点号后的连续 ASCII 数字，其后可能紧跟时区后缀（Z / ±hh:mm）
+        let afterDot = value.index(after: dot)
+        let fractionEnd = value[afterDot...].firstIndex { $0 < "0" || $0 > "9" } ?? value.endIndex
+        let kept = min(6, value.distance(from: afterDot, to: fractionEnd))
+        let cut = value.index(afterDot, offsetBy: kept)
+        let normalized = String(value[..<cut]) + value[fractionEnd...]
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter.date(from: normalized)
     }
 }
 

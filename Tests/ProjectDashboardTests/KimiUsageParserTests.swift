@@ -137,4 +137,48 @@ struct KimiUsageParserTests {
         let summary = try KimiUsageParser.parse(Data(json.utf8))
         #expect(abs((summary.windows.last?.resetAt ?? .distantPast).timeIntervalSince1970 - 1755900000) < 1)
     }
+
+    // 真实接口格式：纳秒级小数的 ISO 时间戳（官方 kimi-cli 注释示例格式）
+    @Test func parseNanosecondISOResetTime() throws {
+        let json = """
+        {"usage":{"used":80,"limit":100,"reset_at":"2026-08-25T05:24:18.443553353Z"},
+         "limits":[]}
+        """
+        let summary = try KimiUsageParser.parse(Data(json.utf8))
+        let resetAt = try #require(summary.windows.last?.resetAt)
+        let expected = try #require(ISO8601DateFormatter().date(from: "2026-08-25T05:24:18Z"))
+        #expect(abs(resetAt.timeIntervalSince(expected)) < 1)
+    }
+
+    // 官方 resetAt 驼峰字段
+    @Test func parseCamelCaseResetAt() throws {
+        let json = """
+        {"usage":{"used":80,"limit":100,"resetAt":"2026-08-25T05:24:18Z"}}
+        """
+        let summary = try KimiUsageParser.parse(Data(json.utf8))
+        #expect(summary.windows.last?.resetAt != nil)
+    }
+
+    // ttl / resetIn 相对秒数字段
+    @Test func parseTtlAndResetInVariants() throws {
+        let ttl = """
+        {"usage":{"used":80,"limit":100,"ttl":7200}}
+        """
+        #expect(try KimiUsageParser.parse(Data(ttl.utf8)).windows.last?.resetAt != nil)
+        let resetIn = """
+        {"usage":{"used":80,"limit":100,"resetIn":3600}}
+        """
+        #expect(try KimiUsageParser.parse(Data(resetIn.utf8)).windows.last?.resetAt != nil)
+    }
+
+    // 带时区偏移 + 微秒小数
+    @Test func parseISOWithOffsetAndFraction() throws {
+        let json = """
+        {"usage":{"used":80,"limit":100,"reset_at":"2026-08-25T13:24:18.123456+08:00"}}
+        """
+        let summary = try KimiUsageParser.parse(Data(json.utf8))
+        let resetAt = try #require(summary.windows.last?.resetAt)
+        let expected = try #require(ISO8601DateFormatter().date(from: "2026-08-25T05:24:18Z"))
+        #expect(abs(resetAt.timeIntervalSince(expected)) < 1)
+    }
 }
