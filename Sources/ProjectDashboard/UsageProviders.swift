@@ -112,3 +112,30 @@ enum KimiUsageParser {
         return nil
     }
 }
+
+// MARK: - GLM 解析（纯函数）
+
+/// 解析智谱 quota/limit 响应（字段名以官方插件 glm-plan-usage 的 query-usage.mjs 为准）。
+/// 兼容 {"data": {"limits": […]}} 与 {"limits": […]} 两种包裹；
+/// 取 type == "TOKENS_LIMIT"（5 小时 Token 窗口）的 percentage。
+enum GLMUsageParser {
+    static func parse(_ data: Data) throws -> ProviderUsageSummary {
+        guard let obj = try? JSONSerialization.jsonObject(with: data),
+              let root0 = obj as? [String: Any] else {
+            throw UsageFetchError.parsing
+        }
+        let root = (root0["data"] as? [String: Any]) ?? root0
+        guard let limits = root["limits"] as? [[String: Any]] else {
+            throw UsageFetchError.parsing
+        }
+        guard let tokenLimit = limits.first(where: { ($0["type"] as? String) == "TOKENS_LIMIT" }),
+              let percent = tokenLimit["percentage"] as? NSNumber else {
+            throw UsageFetchError.parsing
+        }
+        // 该端点不返回窗口重置时间
+        return ProviderUsageSummary(
+            usedPercent: min(max(percent.doubleValue, 0), 100),
+            resetAt: nil
+        )
+    }
+}
