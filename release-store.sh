@@ -28,7 +28,7 @@ echo "==> 编译 release 通用二进制（arm64 + x86_64）"
 swift build -c release --arch arm64 --arch x86_64
 
 echo "==> 生成 bundle"
-./build-app.sh
+DISTRIBUTION=store SYNC_INSTALLED_APP=0 ./build-app.sh
 # 用通用二进制覆盖 build-app.sh 里的单架构二进制
 cp .build/apple/Products/Release/ProjectDashboard "$APP/Contents/MacOS/"
 

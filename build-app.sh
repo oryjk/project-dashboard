@@ -4,6 +4,13 @@ set -e
 cd "$(dirname "$0")"
 
 APP="ProjectDashboard.app"
+DISTRIBUTION="${DISTRIBUTION:-direct}"
+SYNC_INSTALLED_APP="${SYNC_INSTALLED_APP:-1}"
+case "$DISTRIBUTION" in
+    direct) ENTITLEMENTS="DirectEntitlements.plist"; LOCAL_USAGE=true ;;
+    store) ENTITLEMENTS="Entitlements.plist"; LOCAL_USAGE=false ;;
+    *) echo "错误：DISTRIBUTION 必须是 direct 或 store" >&2; exit 1 ;;
+esac
 
 echo "==> 编译 release 版本"
 swift build -c release
@@ -39,11 +46,15 @@ cat > "$APP/Contents/Info.plist" <<'EOF'
     <string>ProjectDashboard</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
+    <key>LocalAccountUsageEnabled</key>
+    <false/>
     <key>LSUIElement</key>
     <true/>
 </dict>
 </plist>
 EOF
+/usr/libexec/PlistBuddy -c "Delete :LocalAccountUsageEnabled" "$APP/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Add :LocalAccountUsageEnabled bool $LOCAL_USAGE" "$APP/Contents/Info.plist"
 
 echo "==> 签名（优先 Apple Development 证书保持身份稳定，否则 ad-hoc）"
 # 沙盒的 security-scoped bookmark 与签名身份绑定：ad-hoc 每次构建 CDHash 都变，
@@ -69,10 +80,10 @@ else
     echo "警告：找不到 $REAL_GIT，沙盒内 git 功能将不可用" >&2
 fi
 
-codesign --force "${SIGN_ARGS[@]}" --entitlements Entitlements.plist "$APP"
+codesign --force "${SIGN_ARGS[@]}" --entitlements "$ENTITLEMENTS" "$APP"
 
 # 如果 /Applications 里有安装副本，同步更新，避免运行到旧版本
-if [ -d "/Applications/$APP" ]; then
+if [ "$DISTRIBUTION" = "direct" ] && [ "$SYNC_INSTALLED_APP" = "1" ] && [ -d "/Applications/$APP" ]; then
     rm -rf "/Applications/$APP"
     cp -R "$APP" /Applications/
     echo "==> 已同步更新 /Applications/$APP"

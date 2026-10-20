@@ -7,6 +7,7 @@ struct ProjectDashboardApp: App {
     @StateObject private var usageModel = UsageModel()
 
     init() {
+        DirectPreferencesMigration.migrateIfNeeded()
         // 纯菜单栏应用，不出现在 Dock
         NSApplication.shared.setActivationPolicy(.accessory)
     }

@@ -1,8 +1,8 @@
 # ProjectDashboard 项目面板
 
-个人自用的 macOS 菜单栏工具：一眼看清本地 git 项目的脏状态、一键清理 Rust 构建产物，并聚合查看 Kimi / GLM 两家 Coding Plan 的 token 用量——不用再逐个打开网页控制台。
+个人自用的 macOS 菜单栏工具：一眼看清本地 git 项目的脏状态、一键清理 Rust 构建产物，并聚合查看 Codex（GPT）/ Claude Code / Kimi / GLM 的订阅用量。
 
-纯本地应用（App Sandbox 沙盒），零第三方依赖，Swift 6 + SwiftUI，需要 macOS 14+（以 Apple Silicon 为主，Intel 未测试）。
+本地应用，直接分发版支持读取本机 CLI 登录，App Store 版保留 App Sandbox 沙盒。零第三方依赖，Swift 6 + SwiftUI，需要 macOS 14+（以 Apple Silicon 为主，Intel 未测试）。
 
 **直接下载**：[Releases 最新版](https://github.com/oryjk/project-dashboard/releases/latest)（`.dmg`，已通过 Apple 公证）。
 
@@ -33,10 +33,12 @@
 
 ### 3. Token 用量聚合
 
-面板顶部的「Token 用量」区块，聚合展示两家 AI 编程订阅的配额：
+面板顶部的「Token 用量」区块，聚合展示四家 AI 编程订阅的配额：
 
 | 提供商 | 展示内容 |
 |---|---|
+| Codex（GPT） | 使用本机 Codex 登录，通过 app-server 查询实际额度窗口与重置时间，无需 API Key |
+| Claude Code | 使用本机订阅登录，展示 5 小时、周及接口提供的模型窗口，无需 API Key |
 | Kimi for Coding | 5 小时窗口 + 周窗口两条进度条，各自的重置倒计时（每秒跳动） |
 | GLM Coding Plan | 5 小时 Token 窗口进度条（国内版 `open.bigmodel.cn` / 国际版 `api.z.ai` 可切换） |
 
@@ -45,7 +47,13 @@
 - API key 仅存 macOS 钥匙串（Keychain），不落磁盘明文、不写日志
 - 认证失败、断网、接口变更等均有中文错误提示（悬停失败图标查看详情）
 
-**首次使用**：点面板上的 ⚙︎（或未配置行的「配置 API Key」按钮）→ 粘贴两家的 key → 保存并刷新。
+**Codex / Claude Code（直接分发版）**：先在终端完成 `codex login`（选择 ChatGPT 账号），或在 `claude` 中执行 `/login`。打开面板即可查询，无需填写 API Key。展示的是订阅额度，API Key 登录和本机会话 token 统计不能替代它。Claude 的 access token 到期不等于账号退出；面板由用量接口验证令牌，遇到 401 会重读 CLI 最新凭据，若凭据已更新则重试一次。成功项每 5 分钟刷新，失败项每 30 秒重试。本应用不会自行轮换或覆盖 Claude 的 refresh token。
+
+Codex 自动查找 `~/.local/bin`、Homebrew、`/usr/local/bin` 和进程 PATH 中的 CLI，并沿用其 `CODEX_HOME` 与登录存储配置。Claude 默认读取 macOS 的 `Claude Code-credentials` 钥匙串条目，缺失时尝试 `~/.claude/.credentials.json`；设置 `CLAUDE_CONFIG_DIR` 时只读取该目录的凭据文件，避免误用默认账号。钥匙串访问受限时显示授权提示。App Store 沙盒版明确提示本机查询不可用，Kimi / GLM 仍可正常配置。
+
+新增本机账号功能需使用包含本次改动的源码构建，已有 Releases 安装包以发布版本为准。
+
+**Kimi / GLM 首次使用**：点面板上的 ⚙︎（或未配置行的「配置 API Key」按钮）→ 粘贴两家的 key → 保存并刷新。
 
 - **Kimi**：在 [kimi.com/code/console](https://www.kimi.com/code/console) 创建，`sk-kimi-` 开头。注意必须用 Kimi Code 平台的 key，**不是**开放平台（platform.kimi.com）的 key
 - **GLM**：在智谱开放平台控制台创建的 Coding Plan API key
@@ -89,11 +97,26 @@ cd project-dashboard
 # 编译 + 组装 .app + 签名 + 打入真实 git 二进制
 ./build-app.sh
 
-# 运行测试（28 个，Swift Testing）
+# 运行测试（Swift Testing）
 swift test
+
+# 构建但不更新 /Applications 的安装副本
+SYNC_INSTALLED_APP=0 ./build-app.sh
+
+# 仅组装沙盒版，验证本机查询的限制提示
+DISTRIBUTION=store SYNC_INSTALLED_APP=0 ./build-app.sh
 ```
 
 `build-app.sh` 会把 Xcode 开发者目录里的真实 git 二进制打进 `Contents/Resources/`——沙盒内无法使用 Xcode 的 tool-shim git，这是 git 扫描功能正常工作的前提（详见脚本内注释）。
+
+默认构建非沙盒的直接分发版；首次启动会从旧沙盒偏好中迁移扫描目录、置顶、归档和排序，保留直接分发版已有设置。`release-store.sh` 明确使用沙盒签名；两种发布脚本均不会更新已安装副本。
+
+可独立检查本机额度（只输出用量或错误，不输出凭据）：
+
+```bash
+swiftc -parse-as-library Sources/ProjectDashboard/{UsageProviders,LocalUsageParsers,LocalUsageProviders}.swift Scripts/check-local-usage.swift -o /tmp/check-local-usage
+/tmp/check-local-usage
+```
 
 发布流程（个人使用不需要）：
 
@@ -112,6 +135,9 @@ Sources/ProjectDashboard/
 ├── DirectoryListView.swift     # 扫描目录管理
 ├── UsageModel.swift            # 用量状态编排（并行查询、5 分钟节流、key 生命周期）
 ├── UsageProviders.swift        # 用量 Provider 协议 + Kimi/GLM 实现与响应解析纯函数
+├── LocalUsageProviders.swift   # 本机 Codex app-server / Claude Keychain 与网络查询
+├── LocalUsageParsers.swift     # Codex / Claude 用量与凭据解析
+├── DirectPreferencesMigration.swift # 旧沙盒偏好迁移
 ├── UsageSectionView.swift      # 用量区块 UI + key 设置弹层
 └── KeychainStore.swift         # API key 的 Keychain 存取
 
@@ -123,13 +149,13 @@ docs/superpowers/               # 设计文档与实现计划
 
 ## 已知限制
 
-- 用量查询走的是两家网页控制台的内部接口（智谱官方 Claude Code 插件同样在用），非正式公开 API，理论上可能随服务端变更而失效——失效时面板会显示「获取失败」并给出原因，届时调整对应 Provider 的解析即可
+- Codex 使用官方 app-server 协议；Kimi / GLM / Claude 查询包含内部接口，可能随服务端变化而失效，界面会显示失败原因
 - GLM 接口不返回窗口重置时间，因此 GLM 行的倒计时显示为「—」
 - Kimi 的「月度会员额度」需要浏览器扩展配合才能查询，未做
 
 ## 数据与隐私
 
-所有数据保存在本机：仓库分区偏好等存 UserDefaults，API key 存 Keychain，无任何遥测与云同步。网络请求仅发生在查询用量时（Kimi / 智谱的 API 域名）。
+仓库分区偏好等存 UserDefaults，API Key 存 Keychain，无云同步。查询用量时访问 Kimi / 智谱 / Anthropic，Codex CLI 访问其配置的服务；本应用不发起模型对话。Codex 凭据由 CLI 管理，Claude 凭据只在内存读取，不另存或输出。本应用不添加遥测，CLI 自身行为由其配置决定。
 
 ## 开源协议
 

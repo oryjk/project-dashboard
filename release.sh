@@ -24,11 +24,11 @@ echo "==> 编译 release 通用二进制（arm64 + x86_64）"
 swift build -c release --arch arm64 --arch x86_64
 
 echo "==> 生成 bundle"
-./build-app.sh
+DISTRIBUTION=direct SYNC_INSTALLED_APP=0 ./build-app.sh
 # 用通用二进制覆盖 build-app.sh 里的单架构二进制
 cp .build/apple/Products/Release/ProjectDashboard "$APP/Contents/MacOS/"
 
-echo "==> Developer ID 签名（hardened runtime + 沙盒 entitlements，公证要求）"
+echo "==> Developer ID 签名（hardened runtime + 直接分发 entitlements，公证要求）"
 # 注意：build-app.sh 已把 git 拷进 Resources（保留 Apple 系统签名）。
 # 公证要求 bundled Mach-O 都由开发者签名，但用开发证书覆盖 Apple 系统签名会触发
 # AMFI SIGTRAP（exit 133）。因此分发用的 git 应取自非 Apple 源（如 Homebrew
@@ -37,11 +37,11 @@ echo "==> Developer ID 签名（hardened runtime + 沙盒 entitlements，公证�
 GIT_SOURCE="${GIT_SOURCE:-/opt/homebrew/bin/git}"
 if [ -f "$GIT_SOURCE" ]; then
     cp "$GIT_SOURCE" "$APP/Contents/Resources/git"
-    codesign --force --options runtime --timestamp --entitlements Entitlements.plist --sign "$IDENTITY" "$APP/Contents/Resources/git"
+    codesign --force --options runtime --timestamp --entitlements DirectEntitlements.plist --sign "$IDENTITY" "$APP/Contents/Resources/git"
 else
     echo "警告：$GIT_SOURCE 不存在，bundled git 仍为 Apple 签名，公证可能被拒" >&2
 fi
-codesign --force --options runtime --timestamp --entitlements Entitlements.plist --sign "$IDENTITY" "$APP"
+codesign --force --options runtime --timestamp --entitlements DirectEntitlements.plist --sign "$IDENTITY" "$APP"
 codesign --verify --deep --strict --verbose=2 "$APP"
 
 echo "==> 提交公证（这一步可能需要几分钟）"

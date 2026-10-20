@@ -6,11 +6,17 @@ import Foundation
 enum UsageProviderID: String, CaseIterable, Hashable, Sendable {
     case kimi
     case glm
+    case codex
+    case claude
+
+    var usesLocalAccount: Bool { self == .codex || self == .claude }
 
     var displayName: String {
         switch self {
         case .kimi: "Kimi"
         case .glm: "GLM"
+        case .codex: "Codex (GPT)"
+        case .claude: "Claude Code"
         }
     }
 }

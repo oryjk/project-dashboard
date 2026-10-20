@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 /// 面板顶部的 Token 用量区块：每家一行进度条 + 手动刷新 + key 设置入口
 struct UsageSectionView: View {
@@ -22,6 +23,7 @@ struct UsageSectionView: View {
                 }
                 .buttonStyle(.borderless)
                 .help("立即刷新用量")
+                .disabled(usage.isRefreshing)
                 Button {
                     showSettings.toggle()
                 } label: {
@@ -39,6 +41,7 @@ struct UsageSectionView: View {
                 UsageProviderRow(
                     state: usage.states[provider.id] ?? .unconfigured,
                     name: provider.id.displayName,
+                    usesLocalAccount: provider.id.usesLocalAccount,
                     onConfigure: { showSettings = true }
                 )
             }
@@ -71,6 +74,7 @@ struct UsageSectionView: View {
 private struct UsageProviderRow: View {
     let state: UsageState
     let name: String
+    let usesLocalAccount: Bool
     /// 未配置行点击「配置 API Key」后打开 key 设置弹层
     let onConfigure: () -> Void
 
@@ -86,13 +90,13 @@ private struct UsageProviderRow: View {
             }
         case .loading:
             HStack {
-                Text(name)
+                providerName
                 Spacer()
                 ProgressView().controlSize(.small)
             }
         case .failed(let message):
             HStack {
-                Text(name)
+                providerName
                 Spacer()
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundStyle(.red)
@@ -101,9 +105,13 @@ private struct UsageProviderRow: View {
                     .foregroundStyle(.secondary)
             }
             .help(message)
+            Text(message)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         case .loaded(let summary):
             VStack(alignment: .leading, spacing: 2) {
-                Text(name)
+                providerName
                 // 每个限额窗口一行：窗口名 + 进度条 + 百分比 + 倒计时
                 ForEach(summary.windows.indices, id: \.self) { index in
                     let window = summary.windows[index]
@@ -111,11 +119,14 @@ private struct UsageProviderRow: View {
                         Text(window.label)
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                            .frame(width: 44, alignment: .leading)
+                            .frame(width: 80, alignment: .leading)
+                            .lineLimit(1)
+                            .help(window.label)
                         UsageBar(percent: window.usedPercent)
                         Text("\(Int(window.usedPercent.rounded()))%")
                             .monospacedDigit()
                             .frame(width: 34, alignment: .trailing)
+                            .help("已用 \(Int(window.usedPercent.rounded()))%，剩余 \(Int((100 - window.usedPercent).rounded()))%")
                         // 倒计时每秒跳动：仅该 Text 被时间线驱动局部重绘，不触发整行刷新
                         TimelineView(.periodic(from: .now, by: 1)) { context in
                             Text(resetText(window.resetAt, now: context.date))
@@ -125,6 +136,15 @@ private struct UsageProviderRow: View {
                         }
                     }
                 }
+            }
+        }
+    }
+
+    private var providerName: some View {
+        HStack(spacing: 5) {
+            Text(name)
+            if usesLocalAccount {
+                Text("本机账号").font(.caption2).foregroundStyle(.secondary)
             }
         }
     }
@@ -171,18 +191,27 @@ private struct UsageSettingsView: View {
     @EnvironmentObject private var usage: UsageModel
     @State private var kimiKey = ""
     @State private var glmKey = ""
+    @State private var copiedProvider: UsageProviderID?
     @AppStorage(UsageSettings.glmInternationalKey) private var glmInternational = false
 
     /// 单列分区布局：所有元素共享同一左边缘（弹层宽度由调用处 .frame(width: 320) 统一约束）
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 6) {
+                Text("本机订阅账号").font(.headline)
+                Text("Codex (GPT) 与 Claude Code 自动使用本机登录，无需 API Key。请先在终端完成对应账号登录。")
+                    .font(.caption).foregroundStyle(.secondary)
+                Button("刷新本机额度") { Task { await usage.refreshNow() } }
+                    .disabled(usage.isRefreshing)
+            }
+            Divider()
+            VStack(alignment: .leading, spacing: 6) {
                 HStack {
                     Text("Kimi").font(.headline)
                     Spacer()
                     headerStatus(for: .kimi)
                 }
-                SecureField(statusText(.kimi), text: $kimiKey)
+                keyInput(for: .kimi, text: $kimiKey)
             }
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
@@ -190,7 +219,7 @@ private struct UsageSettingsView: View {
                     Spacer()
                     headerStatus(for: .glm)
                 }
-                SecureField(statusText(.glm), text: $glmKey)
+                keyInput(for: .glm, text: $glmKey)
                 Text("接口域名")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -205,13 +234,43 @@ private struct UsageSettingsView: View {
                 Button("保存并刷新") {
                     if !kimiKey.isEmpty { usage.saveKey(kimiKey, for: .kimi) }
                     if !glmKey.isEmpty { usage.saveKey(glmKey, for: .glm) }
-                    kimiKey = ""
-                    glmKey = ""
                 }
                 .buttonStyle(.borderedProminent)
             }
         }
         .padding(12)
+        .onAppear {
+            kimiKey = usage.savedKey(for: .kimi) ?? ""
+            glmKey = usage.savedKey(for: .glm) ?? ""
+        }
+        .onDisappear {
+            kimiKey = ""
+            glmKey = ""
+            copiedProvider = nil
+        }
+    }
+
+    /// SecureField 禁止原生复制；通过明确的按钮复制当前完整值，保留隐藏显示。
+    private func keyInput(for id: UsageProviderID, text: Binding<String>) -> some View {
+        HStack(spacing: 8) {
+            SecureField(statusText(id), text: text)
+            Button {
+                let pasteboard = NSPasteboard.general
+                pasteboard.clearContents()
+                copiedProvider = pasteboard.setString(text.wrappedValue, forType: .string) ? id : nil
+            } label: {
+                Label(copiedProvider == id ? "已复制" : "复制",
+                      systemImage: copiedProvider == id ? "checkmark" : "doc.on.doc")
+                    .fixedSize()
+            }
+            .buttonStyle(.borderless)
+            .disabled(text.wrappedValue.isEmpty)
+            .help("复制完整的 \(id.displayName) API Key")
+            .accessibilityLabel("复制 \(id.displayName) API Key")
+        }
+        .onChange(of: text.wrappedValue) { _, _ in
+            if copiedProvider == id { copiedProvider = nil }
+        }
     }
 
     /// SecureField 占位符提示已配置状态与 key 前缀
@@ -229,6 +288,8 @@ private struct UsageSettingsView: View {
                 .foregroundStyle(.green)
             Button("清除", role: .destructive) {
                 usage.deleteKey(for: id)
+                if id == .kimi { kimiKey = "" }
+                if id == .glm { glmKey = "" }
             }
             .buttonStyle(.borderless)
             .font(.caption)
